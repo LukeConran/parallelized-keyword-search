@@ -20,8 +20,13 @@ public:
 
         GetDiskFreeSpace(NULL, NULL, &sectorSize, NULL, NULL);
 
-        shadowSize = ((maxKeywordLength / sectorSize) + 1) * sectorSize;
-        int nullTerminatorBuffer = nonBufferedIO ? sectorSize : 0;
+        if (nonBufferedIO) {
+            shadowSize = ((maxKeywordLength + sectorSize - 1) / sectorSize) * sectorSize;
+        }
+        else {
+            shadowSize = maxKeywordLength;
+        }
+        int nullTerminatorBuffer = nonBufferedIO ? sectorSize : 1; // Only need 1 byte for null if buffered
         slotSize = dataSize + shadowSize + nullTerminatorBuffer;
 
         buffer = (char*)VirtualAlloc(NULL, (UINT64)numSlots * slotSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -68,7 +73,7 @@ public:
             bytesToCopy = shadowSize;
         }
 
-        char* source = GetSlot(sourceSlotID) + dataSize - bytesToCopy;
+        char* source = GetSlot(sourceSlotID) + (dataSize - bytesToCopy);
         char* destination = GetShadowBuffer(destinationSlotID);
         memcpy(destination, source, bytesToCopy);
     }

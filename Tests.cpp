@@ -82,14 +82,14 @@ void TestShadowBufferLogic(BufferManager* bufferManager, int maxKeywordLength) {
     bool shadowMatchesExpected = true;
     for (int i = 0; i < prefixLength; i++) {
         if (shadowBuf1[i] != testPattern[i]) {
-            printf("❌ Shadow buffer verification failed at position %d: expected '%c', got '%c'\n",
+            printf("Shadow buffer verification failed at position %d: expected '%c', got '%c'\n",
                    i, testPattern[i], shadowBuf1[i]);
             shadowMatchesExpected = false;
         }
     }
     
     if (shadowMatchesExpected) {
-        printf("✅ Shadow buffer contains expected data\n");
+        printf("Shadow buffer contains expected data\n");
     }
     
     // Create a test keyword that spans the boundary
@@ -119,7 +119,7 @@ void TestShadowBufferLogic(BufferManager* bufferManager, int maxKeywordLength) {
     char* found = strstr(searchBuffer, spanKeyword);
     if (found) {
         int offset = found - searchBuffer;
-        printf("✅ Successfully found keyword '%s' at offset %d in search buffer\n", 
+        printf("Successfully found keyword '%s' at offset %d in search buffer\n", 
                spanKeyword, offset);
         
         // Show some context around the match
@@ -131,7 +131,7 @@ void TestShadowBufferLogic(BufferManager* bufferManager, int maxKeywordLength) {
         }
         printf("\"\n");
     } else {
-        printf("❌ Failed to find keyword '%s' spanning buffer boundary\n", spanKeyword);
+        printf("Failed to find keyword '%s' spanning buffer boundary\n", spanKeyword);
     }
     
     free(searchBuffer);
@@ -390,7 +390,7 @@ int RunShadowBufferTests() {
     const char* testFilename = "shadow_buffer_test.txt";
     CreateBoundaryTestFile(testFilename);
     
-    // Set up test parameters
+    // Set up test parameters 
     int powerOfTwo = 8;       // 256 bytes buffer
     int numSlots = 5;         // 5 slots
     int maxKeywordLength = 16; // Max keyword length
@@ -409,14 +409,3 @@ int RunShadowBufferTests() {
     printf("\n======= TESTS COMPLETED =======\n");
     return 0;
 }
-
-// Add this to your main function to run the tests
-/*
-int main(int argc, char* argv[]) {
-    // Run the shadow buffer tests
-    RunShadowBufferTests();
-    
-    // Continue with your regular main function...
-    return 0;
-}
-*/

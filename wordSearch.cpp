@@ -12,7 +12,7 @@
 
 int main(int argc, char* argv[]) {
 
-    RunShadowBufferTests();
+    //RunShadowBufferTests();
 
     // Parse command-line arguments
     if (argc != 7) {

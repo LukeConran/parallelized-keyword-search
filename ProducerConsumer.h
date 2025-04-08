@@ -63,7 +63,6 @@ public:
         ReleaseSemaphore(semaFullSlots, 1, NULL);
     }
 
-    // Returns SUCCESS if an item was retrieved, QUIT if the quit event was signaled
     PCStatus Pop(void* item) {
         HANDLE waitHandles[2] = { semaFullSlots, eventQuit };
         DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);

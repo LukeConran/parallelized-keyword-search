@@ -70,8 +70,7 @@ DWORD WINAPI DiskReadThread(LPVOID param) {
                 // Handle error
             }
             reachedEOF = TRUE;
-            // No need to process this slot further
-            ctx->pcEmpty->Push(&slotID); // Return the slot to the empty pool
+            ctx->pcEmpty->Push(&slotID);
             continue;
         }
 
@@ -107,10 +106,7 @@ DWORD WINAPI DiskReadThread(LPVOID param) {
         prevSlotID = slotID;
     }
 
-    // Signal search threads that no more data is coming
     SetEvent(ctx->eventQuit);
-
-    // Clean up
     CloseHandle(hFile);
     return 0;
 }

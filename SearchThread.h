@@ -20,17 +20,14 @@ struct SearchThreadContext {
 DWORD WINAPI SearchThread(LPVOID param) {
     SearchThreadContext* ctx = (SearchThreadContext*)param;
     SetThreadPriority(GetCurrentThread(), IDLE_PRIORITY_CLASS);
-
-    // Simplified affinity setting 
-    SetThreadAffinityMask(GetCurrentThread(), 1ULL << (GetCurrentProcessorNumber() % 64));
+    SetThreadAffinityMask(GetCurrentThread(), 1ULL << (GetCurrentProcessorNumber() % 64)); //need to alter this so it is for any computer
 
     while (TRUE) {
         MyBuf mb;
         if (ctx->pcFull->Pop(&mb) == QUIT) {
             break;
         }
-
-        // Make sure the buffer is null-terminated for strstr
+        char nullTerminator = mb.ptr[mb.size];
         mb.ptr[mb.size] = '\0';
 
         UINT64 localMatches = 0;
@@ -41,16 +38,17 @@ DWORD WINAPI SearchThread(LPVOID param) {
             while ((pos = strstr(pos, ctx->keywords[i])) != NULL) {
                 localMatches++;
                 keywordMatches++;
-                pos += 1; // Move just one character to find overlapping matches
+                pos += 1;
             }
 
-            // Update the match count for this specific keyword
             if (keywordMatches > 0) {
                 WaitForSingleObject(ctx->statsLock, INFINITE);
                 ctx->keywordMatches[i] += keywordMatches;
                 ReleaseMutex(ctx->statsLock);
             }
         }
+
+        mb.ptr[mb.size] = nullTerminator;
 
         if (localMatches > 0) {
             WaitForSingleObject(ctx->statsLock, INFINITE);
