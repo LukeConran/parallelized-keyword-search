@@ -17,11 +17,10 @@ struct DiskThreadContext {
 
 // Disk reading thread function
 DWORD WINAPI DiskReadThread(LPVOID param) {
-    // Cast the parameter to our context structure
+    SetThreadPriority(GetCurrentThread(), ABOVE_NORMAL_PRIORITY_CLASS);
     DiskThreadContext* ctx = (DiskThreadContext*)param;
 
-    // Open the file
-    HANDLE hFile = CreateFile(
+    HANDLE hFile = CreateFileA(
         ctx->filename,
         GENERIC_READ,
         FILE_SHARE_READ,
@@ -33,29 +32,22 @@ DWORD WINAPI DiskReadThread(LPVOID param) {
 
     if (hFile == INVALID_HANDLE_VALUE) {
         // Handle error
-        SetEvent(ctx->eventQuit); // Signal all threads to quit
+        SetEvent(ctx->eventQuit); 
         return 1;
     }
 
-    // Set thread priority higher than search threads
-    SetThreadPriority(GetCurrentThread(), ABOVE_NORMAL_PRIORITY_CLASS);
+    int prevSlotID = -1;
+    BOOL reachedEOF = FALSE;
 
-    int prevSlotID = -1;     // Track the previous slot for shadow buffer copying
-    BOOL reachedEOF = FALSE; // Flag for end of file
-
-    // Main reading loop
     while (!reachedEOF) {
-        // Get an empty slot ID
         int slotID;
         if (ctx->pcEmpty->Pop(&slotID) == QUIT) {
-            break; // Quit signaled
+            break;
         }
 
-        // Get pointer to the slot
         char* slotPtr = ctx->bufferManager->GetSlot(slotID);
         int dataSize = ctx->bufferManager->GetDataSize();
 
-        // Read file data into the slot
         DWORD bytesRead;
         BOOL readSuccess = ReadFile(
             hFile,
@@ -66,15 +58,17 @@ DWORD WINAPI DiskReadThread(LPVOID param) {
         );
 
         if (!readSuccess || bytesRead == 0) {
+            if (bytesRead == 0) {
+                ctx->pcEmpty->Push(&slotID);
+            }
             if (GetLastError() != ERROR_HANDLE_EOF) {
                 // Handle error
             }
             reachedEOF = TRUE;
-            ctx->pcEmpty->Push(&slotID);
+
             continue;
         }
 
-        // If this isn't the first slot, copy shadow data from previous slot
         if (prevSlotID != -1 && ctx->maxKeywordLength > 0) {
             ctx->bufferManager->CopyShadowBuffer(
                 prevSlotID,
@@ -83,26 +77,20 @@ DWORD WINAPI DiskReadThread(LPVOID param) {
             );
         }
 
-        // Create MyBuf structure
         MyBuf mb;
-
-        // Special case for first slot (no shadow data)
         if (prevSlotID == -1) {
             mb.ptr = slotPtr;
             mb.size = bytesRead;
-        }
-        else {
-            // For other slots, search starts at shadow buffer
-            mb.ptr = ctx->bufferManager->GetShadowBuffer(slotID);
+        } else if(slotID == ctx->bufferManager->GetNumSlots() - 1) {
+            mb.ptr = ctx->bufferManager->GetSlot(slotID) - ctx->maxKeywordLength;
+            mb.size = ctx->maxKeywordLength * 2 + bytesRead;
+        } else {
+            mb.ptr = ctx->bufferManager->GetSlot(slotID) - ctx->maxKeywordLength;
             mb.size = ctx->maxKeywordLength + bytesRead;
         }
 
         mb.slotID = slotID;
-
-        // Push to full queue
         ctx->pcFull->Push(&mb);
-
-        // Update tracking variables
         prevSlotID = slotID;
     }
 

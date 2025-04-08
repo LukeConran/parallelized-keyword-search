@@ -4,17 +4,13 @@
 #include "KeywordLoader.h"
 #include "DiskThread.h"
 #include "SearchThread.h"
-#include "Tests.h"
 #include "BufferManager.h"
 #include "MyBuf.h"
+#include "StatisticsThread.h"
 
 
 
 int main(int argc, char* argv[]) {
-
-    //RunShadowBufferTests();
-
-    // Parse command-line arguments
     if (argc != 7) {
         printf("Usage: %s <keywords.txt> <wikipedia.txt> <powerOfTwo> <numSlots> <nonBufferedIO> <strstr|RK>\n", argv[0]);
         return 1;
@@ -37,20 +33,13 @@ int main(int argc, char* argv[]) {
     int maxKeywordLength = FindMaxKeywordLength(keywordFilename);
     printf("Max keyword length: %d\n", maxKeywordLength);
 
-    // Create the quit event for clean termination
     HANDLE eventQuit = CreateEvent(NULL, TRUE, FALSE, NULL);
-
-    // Initialize the mutex for statistics
     HANDLE statsLock = CreateMutex(NULL, FALSE, NULL);
 
-    // Initialize the producer-consumer queues
     ProducerConsumer pcEmpty(eventQuit, numSlots, sizeof(int));
     ProducerConsumer pcFull(eventQuit, numSlots, sizeof(MyBuf));
-
-    // Initialize the buffer manager
     BufferManager bufferManager(powerOfTwo, numSlots, nonBufferedIO, maxKeywordLength);
 
-    // Load keywords
     KeywordEntry* keywords = nullptr;
     int keywordCount = LoadKeywords(keywordFilename, &keywords);
 
@@ -76,8 +65,34 @@ int main(int argc, char* argv[]) {
         pcEmpty.Push(&i);
     }
 
-    // Track total matches
     UINT64 totalMatchesFound = 0;
+    UINT64 bytesProcessed = 0;
+    int activeThreads = 0;
+
+    // Get file size for progress reporting
+    HANDLE hFile = CreateFileA(
+        wikipediaFilename,
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+
+    UINT64 fileSize = 0;
+    if (hFile != INVALID_HANDLE_VALUE) {
+        LARGE_INTEGER fileSizeLarge;
+        if (GetFileSizeEx(hFile, &fileSizeLarge)) {
+            fileSize = fileSizeLarge.QuadPart;
+        }
+        CloseHandle(hFile);
+    }
+
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+    // int numCores = 5;
+    int numCores = sysInfo.dwNumberOfProcessors;
 
     // Create disk thread context
     DiskThreadContext diskCtx = {
@@ -99,42 +114,81 @@ int main(int argc, char* argv[]) {
         keywordMatches,
         eventQuit,
         statsLock,
-        &totalMatchesFound
+        &totalMatchesFound,
+        maxKeywordLength,
+        &bytesProcessed,
+        &activeThreads
     };
+
+    StatisticsThreadContext statsCtx = {
+        eventQuit,
+        statsLock,
+        &totalMatchesFound,
+        fileSize,
+        &bytesProcessed,
+        &activeThreads,
+        numCores,
+        NULL  // Report file will be opened in the stats thread
+    };
+
+    HANDLE hStatsThread = CreateThread(NULL, 0, StatisticsThread, &statsCtx, 0, NULL);
+    SetThreadPriority(hStatsThread, ABOVE_NORMAL_PRIORITY_CLASS);
 
     // Start the disk thread
     HANDLE hDiskThread = CreateThread(NULL, 0, DiskReadThread, &diskCtx, 0, NULL);
 
-    // Start a single search thread for testing
-    HANDLE hSearchThread = CreateThread(NULL, 0, SearchThread, &searchCtx, 0, NULL);
+    int threadCount = 0;
+    HANDLE* threads = new HANDLE[numCores];
+    for(int i = 0; i < numCores; i++) {
+        WaitForSingleObject(statsLock, INFINITE);
+        activeThreads++;
+        ReleaseMutex(statsLock);
 
-    // Simple progress reporting
+        HANDLE hSearchThread = CreateThread(NULL, 0, SearchThread, &searchCtx, 0, NULL);
+        if (hSearchThread == NULL) {
+            printf("Failed to create search thread\n");
+            CloseHandle(hDiskThread);
+            CloseHandle(eventQuit);
+            CloseHandle(statsLock);
+            free(keywordStrings);
+            free(keywordMatches);
+            FreeKeywords(keywords, keywordCount);
+            return 1;
+        } else {
+            threads[threadCount++] = hSearchThread;
+            SetThreadPriority(threads[i], IDLE_PRIORITY_CLASS);
+            SetThreadAffinityMask(threads[i], 1ULL << i);
+        }
+    }
+
+
     printf("Started threads, waiting for completion...\n");
 
-    // Wait for the disk thread to finish
     WaitForSingleObject(hDiskThread, INFINITE);
     printf("Disk thread finished\n");
 
-    // Signal the search thread to finish (should happen automatically)
-    WaitForSingleObject(hSearchThread, INFINITE);
+    WaitForSingleObject(hStatsThread, INFINITE);
+    CloseHandle(hStatsThread);
+
+    if (threadCount > 0) {
+        WaitForMultipleObjects(threadCount, threads, TRUE, INFINITE);
+        for (int i = 0; i < threadCount; i++) {
+            CloseHandle(threads[i]);
+        }
+    }
     printf("Search thread finished\n");
 
-    // Print results
     printf("Total matches found: %llu\n", totalMatchesFound);
 
-    // Print top 10 keyword matches (or fewer if there are less than 10 keywords)
     printf("Keyword matches:\n");
     int limitDisplay = keywordCount;
     for (int i = 0; i < limitDisplay; i++) {
         printf("[%d] %s = %d\n", i, keywords[i].keyword, keywordMatches[i]);
     }
 
-    // Clean up
     CloseHandle(hDiskThread);
-    CloseHandle(hSearchThread);
     CloseHandle(eventQuit);
     CloseHandle(statsLock);
-
     free(keywordStrings);
     free(keywordMatches);
     FreeKeywords(keywords, keywordCount);

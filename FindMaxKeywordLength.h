@@ -3,7 +3,7 @@
 #include "pch.h"
 
 int FindMaxKeywordLength(const char* keywordFilename) {
-    HANDLE hFile = CreateFile(keywordFilename, GENERIC_READ, FILE_SHARE_READ,
+    HANDLE hFile = CreateFileA(keywordFilename, GENERIC_READ, FILE_SHARE_READ,
         NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
     if (hFile == INVALID_HANDLE_VALUE) {

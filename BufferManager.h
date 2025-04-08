@@ -20,14 +20,14 @@ public:
 
         GetDiskFreeSpace(NULL, NULL, &sectorSize, NULL, NULL);
 
-        if (nonBufferedIO) {
-            shadowSize = ((maxKeywordLength + sectorSize - 1) / sectorSize) * sectorSize;
-        }
-        else {
-            shadowSize = maxKeywordLength;
-        }
-        int nullTerminatorBuffer = nonBufferedIO ? sectorSize : 1; // Only need 1 byte for null if buffered
+        shadowSize = (maxKeywordLength / sectorSize + 1) * sectorSize;
+
+        int nullTerminatorBuffer = sectorSize; // Only need 1 byte for null if buffered
         slotSize = dataSize + shadowSize + nullTerminatorBuffer;
+
+        // if (nonBufferedIO) {
+        //     slotSize = ((slotSize + sectorSize - 1) / sectorSize) * sectorSize;
+        // }
 
         buffer = (char*)VirtualAlloc(NULL, (UINT64)numSlots * slotSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if (!buffer) {
@@ -51,15 +51,15 @@ public:
         if (slotID < 0 || slotID >= numSlots) {
             return nullptr;
         }
-
+    
         return buffer + (slotID * slotSize) + shadowSize;
     }
-
+    
     char* GetShadowBuffer(int slotID) {
         if (slotID < 0 || slotID >= numSlots) {
             return nullptr;
         }
-
+    
         return buffer + (slotID * slotSize);
     }
 
@@ -74,7 +74,7 @@ public:
         }
 
         char* source = GetSlot(sourceSlotID) + (dataSize - bytesToCopy);
-        char* destination = GetShadowBuffer(destinationSlotID);
+        char* destination = GetSlot(destinationSlotID) - bytesToCopy;
         memcpy(destination, source, bytesToCopy);
     }
 

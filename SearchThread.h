@@ -5,7 +5,6 @@
 #include "BufferManager.h"
 #include "MyBuf.h"
 
-// Simple structure to hold search thread parameters 
 struct SearchThreadContext {
     ProducerConsumer* pcEmpty;      // Queue for empty slots
     ProducerConsumer* pcFull;       // Queue for filled slots
@@ -15,20 +14,25 @@ struct SearchThreadContext {
     HANDLE eventQuit;               // Event to signal threads to quit
     HANDLE statsLock;               // Mutex for updating stats
     UINT64* totalMatchesFound;      // Pointer to global match counter
+    int maxKeywordLength;           // Maximum length of keywords
+    UINT64* bytesProcessed;         // Pointer to bytes processed counter
+    int* activeThreads;             // Pointer to active threads counter
 };
 
 DWORD WINAPI SearchThread(LPVOID param) {
     SearchThreadContext* ctx = (SearchThreadContext*)param;
-    SetThreadPriority(GetCurrentThread(), IDLE_PRIORITY_CLASS);
-    SetThreadAffinityMask(GetCurrentThread(), 1ULL << (GetCurrentProcessorNumber() % 64)); //need to alter this so it is for any computer
 
     while (TRUE) {
         MyBuf mb;
         if (ctx->pcFull->Pop(&mb) == QUIT) {
             break;
         }
-        char nullTerminator = mb.ptr[mb.size];
+        
         mb.ptr[mb.size] = '\0';
+
+        WaitForSingleObject(ctx->statsLock, INFINITE);
+        *ctx->bytesProcessed += mb.size;
+        ReleaseMutex(ctx->statsLock);
 
         UINT64 localMatches = 0;
         for (int i = 0; i < ctx->keywordCount; i++) {
@@ -36,9 +40,14 @@ DWORD WINAPI SearchThread(LPVOID param) {
             int keywordMatches = 0;
 
             while ((pos = strstr(pos, ctx->keywords[i])) != NULL) {
-                localMatches++;
-                keywordMatches++;
-                pos += 1;
+                if(pos - mb.ptr < mb.size) {
+                    localMatches++;
+                    keywordMatches++;
+                    pos += 1;
+                }
+                else {
+                    break;
+                }
             }
 
             if (keywordMatches > 0) {
@@ -48,8 +57,6 @@ DWORD WINAPI SearchThread(LPVOID param) {
             }
         }
 
-        mb.ptr[mb.size] = nullTerminator;
-
         if (localMatches > 0) {
             WaitForSingleObject(ctx->statsLock, INFINITE);
             *ctx->totalMatchesFound += localMatches;
@@ -58,6 +65,10 @@ DWORD WINAPI SearchThread(LPVOID param) {
 
         ctx->pcEmpty->Push(&mb.slotID);
     }
+
+    WaitForSingleObject(ctx->statsLock, INFINITE);
+    (*ctx->activeThreads)--;
+    ReleaseMutex(ctx->statsLock);
 
     return 0;
 }
